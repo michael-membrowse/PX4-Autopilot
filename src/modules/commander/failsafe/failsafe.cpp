@@ -664,7 +664,7 @@ void Failsafe::checkStateAndMode(const hrt_abstime &time_us, const State &state,
 
 	CHECK_FAILSAFE(status_flags, fd_imbalanced_prop, fromImbalancedPropActParam(_param_com_imb_prop_act.get()));
 	CHECK_FAILSAFE(status_flags, fd_motor_failure, fromActuatorFailureActParam(_param_com_actuator_failure_act.get()));
-	CHECK_FAILSAFE(status_flags, gps_redundancy_lost, fromGpsRedundancyActParam(_param_com_gps_loss_act.get()));
+	CHECK_FAILSAFE(status_flags, gnss_lost, fromGpsRedundancyActParam(_param_com_gps_loss_act.get()));
 
 
 

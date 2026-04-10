@@ -89,7 +89,7 @@ public:
 		f = 0.f;
 		param_set(param_find("SENS_GPS1_OFFY"), &f);
 		int i = 0;
-		param_set(param_find("SYS_HAS_NUM_GPS"), &i);
+		param_set(param_find("SYS_HAS_NUM_GNSS"), &i);
 		param_set(param_find("COM_GPS_LOSS_ACT"), &i);
 
 		// Construct check after params are set so ParamFloat reads correct initial values
