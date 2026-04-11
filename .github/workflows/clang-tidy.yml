@@ -76,14 +76,7 @@ jobs:
       run: |
         apt-get update
         apt-get install -y --no-install-recommends libclang-rt-18-dev
-        mkdir -p build/px4_sitl_default-clang-test
-        cd build/px4_sitl_default-clang-test
-        cmake "$GITHUB_WORKSPACE" \
-          -DCONFIG=px4_sitl_default \
-          -DCMAKE_C_COMPILER=clang \
-          -DCMAKE_CXX_COMPILER=clang++ \
-          -DCMAKE_TESTING=ON \
-          -G Ninja
+        make px4_sitl_default-clang-test
 
     # On PRs, also produce a `pr-review` artifact for the PR Review Poster
     # workflow to consume. clang-tidy-diff-18 emits a unified fixes.yml that
