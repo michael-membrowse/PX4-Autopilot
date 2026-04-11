@@ -39,8 +39,31 @@ jobs:
         cache-key-prefix: ccache-clang-tidy
         max-size: 150M
 
+    # fuzztest (enabled via BUILD_TESTING in the -test build dir below)
+    # pulls in abseil via FetchContent, and abseil runs a try_compile
+    # with fuzztest's -fsanitize=address flags. The px4-dev container
+    # ships clang but not the clang compiler-rt runtime, so that link
+    # fails and the configure reports "pthreads not found".
+    # libclang-rt-18-dev provides libclang_rt.asan and friends.
+    # Install it on PRs only since the push-to-main path does not use
+    # the test-enabled build dir.
+    - name: Install clang compiler-rt (PR only)
+      if: github.event_name == 'pull_request'
+      run: |
+        apt-get update
+        apt-get install -y --no-install-recommends libclang-rt-18-dev
+
+    # `make clang-ci` prepares both clang build directories:
+    #   - build/px4_sitl_default-clang:       full build, BUILD_TESTING=OFF
+    #   - build/px4_sitl_default-clang-test:  configure-only, BUILD_TESTING=ON
+    # On push-to-main we only need the first, so use the simpler target.
     - name: Build - px4_sitl_default (Clang)
-      run: make -j16 px4_sitl_default-clang
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          make -j16 clang-ci
+        else
+          make -j16 px4_sitl_default-clang
+        fi
 
     - name: Run Clang-Tidy Analysis
       id: clang_tidy
@@ -50,33 +73,6 @@ jobs:
         else
           python3 Tools/ci/run-clang-tidy-pr.py origin/${{ github.base_ref }}
         fi
-
-    # The clang-tidy-diff artifact producer uses a SEPARATE build
-    # directory configured with -DCMAKE_TESTING=ON so that test files
-    # (gated by BUILD_TESTING) land in compile_commands.json with
-    # proper include paths. Without this, clang-tidy-diff running on a
-    # PR diff that touches a test file fails with
-    # "gtest/gtest.h file not found".
-    #
-    # We keep a separate build dir (not the main one above) because
-    # the main `make clang-tidy` push-to-main job runs
-    # `run-clang-tidy.py` across ALL TUs, and 189 pre-existing issues
-    # in PX4's test files would break main. The diff-based artifact
-    # producer is inherently scoped to lines the PR changed, so
-    # pre-existing test file issues never surface.
-    #
-    # fuzztest pulls in abseil via FetchContent, and abseil runs a
-    # try_compile with fuzztest's -fsanitize=address flags. The
-    # px4-dev container ships clang but not the clang compiler-rt
-    # runtime, so that link fails and the configure reports
-    # "pthreads not found". libclang-rt-18-dev provides
-    # libclang_rt.asan and friends so the configure passes.
-    - name: Configure test-enabled build for PR review artifact
-      if: always() && github.event_name == 'pull_request'
-      run: |
-        apt-get update
-        apt-get install -y --no-install-recommends libclang-rt-18-dev
-        make px4_sitl_default-clang-test
 
     # On PRs, also produce a `pr-review` artifact for the PR Review Poster
     # workflow to consume. clang-tidy-diff-18 emits a unified fixes.yml that
