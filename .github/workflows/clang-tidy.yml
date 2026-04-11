@@ -51,6 +51,40 @@ jobs:
           python3 Tools/ci/run-clang-tidy-pr.py origin/${{ github.base_ref }}
         fi
 
+    # The clang-tidy-diff artifact producer uses a SEPARATE build
+    # directory configured with -DCMAKE_TESTING=ON so that test files
+    # (gated by BUILD_TESTING) land in compile_commands.json with
+    # proper include paths. Without this, clang-tidy-diff running on a
+    # PR diff that touches a test file fails with
+    # "gtest/gtest.h file not found".
+    #
+    # We keep a separate build dir (not the main one above) because
+    # the main `make clang-tidy` push-to-main job runs
+    # `run-clang-tidy.py` across ALL TUs, and 189 pre-existing issues
+    # in PX4's test files would break main. The diff-based artifact
+    # producer is inherently scoped to lines the PR changed, so
+    # pre-existing test file issues never surface.
+    #
+    # fuzztest pulls in abseil via FetchContent, and abseil runs a
+    # try_compile with fuzztest's -fsanitize=address flags. The
+    # px4-dev container ships clang but not the clang compiler-rt
+    # runtime, so that link fails and the configure reports
+    # "pthreads not found". libclang-rt-18-dev provides
+    # libclang_rt.asan and friends so the configure passes.
+    - name: Configure test-enabled build for PR review artifact
+      if: always() && github.event_name == 'pull_request'
+      run: |
+        apt-get update
+        apt-get install -y --no-install-recommends libclang-rt-18-dev
+        mkdir -p build/px4_sitl_default-clang-test
+        cd build/px4_sitl_default-clang-test
+        cmake "$GITHUB_WORKSPACE" \
+          -DCONFIG=px4_sitl_default \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DCMAKE_TESTING=ON \
+          -G Ninja
+
     # On PRs, also produce a `pr-review` artifact for the PR Review Poster
     # workflow to consume. clang-tidy-diff-18 emits a unified fixes.yml that
     # the producer script translates into line-anchored review comments.
@@ -61,18 +95,17 @@ jobs:
       run: |
         mkdir -p pr-review
         # Drop changed C/C++ source files that are not in
-        # compile_commands.json. Test files (gated by BUILD_TESTING=OFF)
-        # are not in the database, so feeding them to clang-tidy-diff
-        # produces false positives like "gtest/gtest.h file not found".
-        # Headers always pass through: clang-tidy analyzes header
-        # changes via the TUs that include them.
+        # compile_commands.json for the test-enabled build. Files not
+        # in the DB are platform-specific sources, vendored code, or
+        # submodule code we don't own. Feeding them to clang-tidy-diff
+        # produces false positives from unresolved headers.
         python3 Tools/ci/clang-tidy-diff-filter.py \
-          --build-dir build/px4_sitl_default-clang \
+          --build-dir build/px4_sitl_default-clang-test \
           --base-ref origin/${{ github.base_ref }} \
           --out pr-review/diff.patch
         if [ -s pr-review/diff.patch ]; then
           clang-tidy-diff-18.py -p1 \
-            -path build/px4_sitl_default-clang \
+            -path build/px4_sitl_default-clang-test \
             -export-fixes pr-review/fixes.yml \
             -j0 < pr-review/diff.patch || true
         else
