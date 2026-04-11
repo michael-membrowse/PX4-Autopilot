@@ -60,11 +60,24 @@ jobs:
       if: always() && github.event_name == 'pull_request'
       run: |
         mkdir -p pr-review
-        git diff -U0 origin/${{ github.base_ref }}...HEAD -- ':!*/test/*' \
-          | clang-tidy-diff-18.py -p1 \
-              -path build/px4_sitl_default-clang \
-              -export-fixes pr-review/fixes.yml \
-              -j0 || true
+        # Drop changed C/C++ source files that are not in
+        # compile_commands.json. Test files (gated by BUILD_TESTING=OFF)
+        # are not in the database, so feeding them to clang-tidy-diff
+        # produces false positives like "gtest/gtest.h file not found".
+        # Headers always pass through: clang-tidy analyzes header
+        # changes via the TUs that include them.
+        python3 Tools/ci/clang-tidy-diff-filter.py \
+          --build-dir build/px4_sitl_default-clang \
+          --base-ref origin/${{ github.base_ref }} \
+          --out pr-review/diff.patch
+        if [ -s pr-review/diff.patch ]; then
+          clang-tidy-diff-18.py -p1 \
+            -path build/px4_sitl_default-clang \
+            -export-fixes pr-review/fixes.yml \
+            -j0 < pr-review/diff.patch || true
+        else
+          echo "No analyzable files in diff; skipping clang-tidy-diff"
+        fi
 
     - name: Build pr-review artifact
       if: always() && github.event_name == 'pull_request'
